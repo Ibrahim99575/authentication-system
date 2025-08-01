@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import VideoCapture from './VideoCapture';
+import FingerprintCapture from './FingerprintCapture';
 import BiometricAuthAPI from '../services/api';
 
 const AuthForm = ({ onAuthSuccess }) => {
     const [isLogin, setIsLogin] = useState(true);
-    const [loginType, setLoginType] = useState('password'); // 'password' or 'biometric'
+    const [loginType, setLoginType] = useState('password'); // 'password', 'biometric', or 'fingerprint'
     const [isRecording, setIsRecording] = useState(false);
+    const [isCapturing, setIsCapturing] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -125,10 +127,42 @@ const AuthForm = ({ onAuthSuccess }) => {
                 setError(result.message || 'Biometric login failed');
             }
         } catch (error) {
-            setError(error.message || 'Biometric login failed');
+            console.error('Biometric login error:', error);
+            const errorMessage = error?.message || error?.detail || (typeof error === 'string' ? error : 'Biometric login failed');
+            setError(errorMessage);
         } finally {
             setIsLoading(false);
             setIsRecording(false);
+        }
+    };
+    
+    const handleFingerprintAuth = async (fingerprintData) => {
+        if (!validateForm()) {
+            setIsCapturing(false);
+            return;
+        }
+        
+        setIsLoading(true);
+        setError('');
+        
+        try {
+            const result = await api.loginFingerprint(formData.username, formData.password, fingerprintData);
+            
+            if (result.success) {
+                setSuccess('Windows Hello authentication successful! Redirecting...');
+                setTimeout(() => {
+                    onAuthSuccess(result.user, result.token.access_token);
+                }, 1000);
+            } else {
+                setError(result.message || 'Windows Hello authentication failed');
+            }
+        } catch (error) {
+            console.error('Fingerprint login error:', error);
+            const errorMessage = error?.message || error?.detail || (typeof error === 'string' ? error : 'Windows Hello authentication failed');
+            setError(errorMessage);
+        } finally {
+            setIsLoading(false);
+            setIsCapturing(false);
         }
     };
     
@@ -152,7 +186,7 @@ const AuthForm = ({ onAuthSuccess }) => {
     };
     
     return (
-        <div className={`card ${isLogin && loginType === 'biometric' ? 'card-wide' : ''}`}>
+        <div className={`card ${isLogin && (loginType === 'biometric' || loginType === 'fingerprint') ? 'card-wide' : ''}`}>
             <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#333' }}>
                 {isLogin ? 'Login to Your Account' : 'Create New Account'}
             </h2>
@@ -187,7 +221,16 @@ const AuthForm = ({ onAuthSuccess }) => {
                             checked={loginType === 'biometric'}
                             onChange={(e) => setLoginType(e.target.value)}
                         />
-                        Biometric Login
+                        Face Biometric
+                    </label>
+                    <label className="radio-option">
+                        <input
+                            type="radio"
+                            value="fingerprint"
+                            checked={loginType === 'fingerprint'}
+                            onChange={(e) => setLoginType(e.target.value)}
+                        />
+                        Windows Hello Login
                     </label>
                 </div>
             )}
@@ -206,8 +249,8 @@ const AuthForm = ({ onAuthSuccess }) => {
                 </div>
             )}
             
-            {/* Form - Hide for biometric login */}
-            {!(isLogin && loginType === 'biometric') && (
+            {/* Form - Hide for biometric and fingerprint login */}
+            {!(isLogin && (loginType === 'biometric' || loginType === 'fingerprint')) && (
                 <form onSubmit={handlePasswordAuth}>
                     <div className="form-group">
                         <label className="form-label">Username</label>
@@ -317,7 +360,7 @@ const AuthForm = ({ onAuthSuccess }) => {
             {isLogin && loginType === 'biometric' && (
                 <div style={{ marginTop: '20px' }}>
                     <h3 style={{ textAlign: 'center', marginBottom: '20px' }}>
-                        Biometric Verification
+                        Face Biometric Verification
                     </h3>
                     
                     {/* Horizontal Layout Container */}
@@ -388,6 +431,88 @@ const AuthForm = ({ onAuthSuccess }) => {
                                 <div className="loading" style={{ justifyContent: 'center', marginTop: '20px' }}>
                                     <div className="spinner"></div>
                                     Processing biometric data...
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Windows Hello Login Section */}
+            {isLogin && loginType === 'fingerprint' && (
+                <div style={{ marginTop: '20px' }}>
+                    <h3 style={{ textAlign: 'center', marginBottom: '20px' }}>
+                        Windows Hello Authentication
+                    </h3>
+                    
+                    {/* Horizontal Layout Container */}
+                    <div className="biometric-horizontal" style={{ 
+                        display: 'flex', 
+                        gap: '25px', 
+                        alignItems: 'flex-start',
+                        minHeight: '300px'
+                    }}>
+                        {/* Left Side - Fingerprint Capture */}
+                        <div style={{ 
+                            flex: '1', 
+                            minWidth: '300px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center'
+                        }}>
+                            <FingerprintCapture
+                                onFingerprintCapture={handleFingerprintAuth}
+                                isCapturing={isCapturing}
+                                setIsCapturing={setIsCapturing}
+                                disabled={isLoading}
+                            />
+                        </div>
+                        
+                        {/* Right Side - Input Section */}
+                        <div style={{ 
+                            flex: '1', 
+                            minWidth: '280px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            padding: '20px 0'
+                        }}>
+                            <div className="alert alert-info" style={{ marginBottom: '20px' }}>
+                                Enter your credentials and use Windows Hello for secure authentication.
+                            </div>
+                            
+                            <div className="form-group">
+                                <label className="form-label">Username</label>
+                                <input
+                                    type="text"
+                                    name="username"
+                                    value={formData.username}
+                                    onChange={handleInputChange}
+                                    className="form-input"
+                                    required
+                                    disabled={isLoading}
+                                    placeholder="Enter your username"
+                                />
+                            </div>
+                            
+                            <div className="form-group">
+                                <label className="form-label">Password</label>
+                                <input
+                                    type="password"
+                                    name="password"
+                                    value={formData.password}
+                                    onChange={handleInputChange}
+                                    className="form-input"
+                                    required
+                                    disabled={isLoading}
+                                    placeholder="Enter your password"
+                                />
+                            </div>
+                            
+                            {isLoading && (
+                                <div className="loading" style={{ justifyContent: 'center', marginTop: '20px' }}>
+                                    <div className="spinner"></div>
+                                    Processing Windows Hello authentication...
                                 </div>
                             )}
                         </div>

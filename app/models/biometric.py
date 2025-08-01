@@ -2,21 +2,30 @@
 Biometric template model for storing encrypted biometric data
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, LargeBinary, ForeignKey, Float, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, LargeBinary, ForeignKey, Float, Boolean, Enum
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+import enum
 from app.database import Base
 
+class BiometricType(enum.Enum):
+    """Enum for biometric types"""
+    FACE = "face"
+    FINGERPRINT = "fingerprint"
+
 class BiometricTemplate(Base):
-    """Biometric template model for face recognition data"""
+    """Biometric template model for face recognition and fingerprint data"""
     
     __tablename__ = "biometric_templates"
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
+    # Biometric type
+    biometric_type = Column(Enum(BiometricType), nullable=False, default=BiometricType.FACE)
+    
     # Template data (encrypted)
-    template_data = Column(LargeBinary, nullable=False)  # Encrypted face encoding
+    template_data = Column(LargeBinary, nullable=False)  # Encrypted face encoding or fingerprint minutiae
     template_hash = Column(String(64), nullable=False)   # Hash for quick comparison
     
     # Template metadata
@@ -52,6 +61,7 @@ class BiometricTemplate(Base):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "biometric_type": self.biometric_type.value if self.biometric_type else None,
             "template_version": self.template_version,
             "quality_score": self.quality_score,
             "confidence_score": self.confidence_score,

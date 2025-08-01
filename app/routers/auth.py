@@ -11,10 +11,11 @@ from datetime import datetime, timedelta
 from app.database import get_db
 from app.schemas.auth import (
     UserCreate, UserLogin, UserResponse, Token, BiometricLoginRequest,
-    BiometricRegistrationRequest, AuthResponse, RefreshTokenRequest
+    BiometricRegistrationRequest, AuthResponse, RefreshTokenRequest, FingerprintLoginRequest
 )
 from app.services.auth_service import AuthService
 from app.services.biometric_service import BiometricService
+from app.services.fingerprint_service import FingerprintService
 from app.services.user_service import UserService
 from app.utils.security import create_access_token, verify_token
 from app.utils.logger import get_logger
@@ -338,4 +339,110 @@ async def logout(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Logout failed"
+        )
+
+@router.post("/login-fingerprint", response_model=AuthResponse)
+async def login_with_fingerprint(
+    login_data: FingerprintLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """Login with fingerprint verification and password"""
+    try:
+        auth_service = AuthService(db)
+        fingerprint_service = FingerprintService(db)
+        start_time = datetime.now()
+        
+        # First, verify password
+        user = auth_service.authenticate_user(login_data.username, login_data.password)
+        if not user:
+            processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            auth_service.log_auth_attempt(
+                username_attempted=login_data.username,
+                auth_type="fingerprint",
+                auth_result="failure",
+                processing_time_ms=processing_time,
+                error_message="Invalid credentials"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials"
+            )
+        
+        # Check if user has fingerprint templates
+        fingerprint_templates = fingerprint_service.get_user_fingerprint_templates(user.id)
+        if not fingerprint_templates:
+            processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            auth_service.log_auth_attempt(
+                user_id=user.id,
+                username_attempted=user.username,
+                auth_type="fingerprint",
+                auth_result="failure",
+                processing_time_ms=processing_time,
+                error_message="No fingerprint templates enrolled"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fingerprint templates enrolled for this user"
+            )
+        
+        # Verify fingerprint data
+        verification_result = await fingerprint_service.verify_fingerprint(
+            user.id,
+            login_data.fingerprint_data
+        )
+        
+        processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
+        
+        if not verification_result.success:
+            # Log failed fingerprint verification
+            auth_service.log_auth_attempt(
+                user_id=user.id,
+                username_attempted=user.username,
+                auth_type="fingerprint",
+                auth_result="failure",
+                biometric_score=verification_result.similarity_score,
+                face_detected=verification_result.face_detected,
+                processing_time_ms=processing_time,
+                error_message="Fingerprint verification failed"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Fingerprint verification failed"
+            )
+        
+        # Generate tokens
+        token = auth_service.create_tokens(user)
+        
+        # Update last login
+        user.last_login = datetime.now()
+        db.commit()
+        
+        # Log successful attempt
+        auth_service.log_auth_attempt(
+            user_id=user.id,
+            username_attempted=user.username,
+            auth_type="fingerprint",
+            auth_result="success",
+            biometric_score=verification_result.similarity_score,
+            face_detected=verification_result.face_detected,
+            processing_time_ms=processing_time,
+            token_issued=True
+        )
+        
+        return AuthResponse(
+            success=True,
+            message="Fingerprint login successful",
+            user=UserResponse.from_orm(user),
+            token=token,
+            biometric_score=verification_result.similarity_score,
+            processing_time_ms=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Fingerprint login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Fingerprint login failed"
         )

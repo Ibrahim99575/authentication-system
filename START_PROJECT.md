@@ -168,9 +168,21 @@ Get-Content app.log -Tail 20
 1. **Start both servers** (backend on 8000, frontend on 3000)
 2. **Open browser** to `http://localhost:3000`
 3. **Register new account** with username, email, password
-4. **Enroll biometric** by recording face video
-5. **Test login** with username/password + face verification
+4. **Enroll biometric data:**
+   - Go to Biometric page
+   - Choose Face Recognition or Fingerprint
+   - Follow enrollment instructions
+5. **Test login options:**
+   - Password-only login
+   - Face + Password login
+   - Fingerprint + Password login
 6. **Check profile** and update user information
+
+### 🔐 Available Authentication Methods
+
+1. **Password Login**: Traditional username + password
+2. **Face Biometric Login**: Password + face video verification
+3. **Fingerprint Login**: Password + fingerprint sensor verification
 
 ---
 

@@ -90,16 +90,17 @@ password: securepassword123
 }
 ```
 
-### 4. Biometric Login
+### 4. Biometric Login (Face Recognition)
 **POST** `/auth/login-biometric`
 
-Secure login using password + biometric verification.
+Secure login using password + face biometric verification.
 
 **Request Body:**
 ```json
 {
   "username": "jane_doe",
   "password": "securepassword123",
+  "biometric_type": "face",
   "video_data": "base64_encoded_video_data",
   "video_format": "mp4"
 }
@@ -117,7 +118,33 @@ Secure login using password + biometric verification.
 }
 ```
 
-### 5. Token Refresh
+### 5. Fingerprint Login
+**POST** `/auth/login-fingerprint`
+
+Secure login using password + fingerprint verification.
+
+**Request Body:**
+```json
+{
+  "username": "jane_doe",
+  "password": "securepassword123",
+  "fingerprint_data": "base64_encoded_fingerprint_data"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Fingerprint login successful",
+  "user": {...},
+  "token": {...},
+  "biometric_score": 0.91,
+  "processing_time_ms": 156
+}
+```
+
+### 6. Token Refresh
 **POST** `/auth/refresh`
 
 Refresh an expired access token using a refresh token.
@@ -197,14 +224,15 @@ Get authentication statistics for the current user.
 
 ## Biometric Operations
 
-### 1. Enroll Biometric Template
+### 1. Enroll Face Biometric Template
 **POST** `/biometric/enroll`
 
-Enroll a new biometric template for the authenticated user.
+Enroll a new face biometric template for the authenticated user.
 
 **Request Body:**
 ```json
 {
+  "biometric_type": "face",
   "video_data": "base64_encoded_video_data",
   "video_format": "mp4",
   "replace_existing": false
@@ -215,7 +243,7 @@ Enroll a new biometric template for the authenticated user.
 ```json
 {
   "success": true,
-  "message": "Biometric template enrolled successfully",
+  "message": "Face biometric template enrolled successfully",
   "face_detected": true,
   "quality_score": 0.92,
   "processing_time_ms": 187,
@@ -223,21 +251,86 @@ Enroll a new biometric template for the authenticated user.
 }
 ```
 
-### 2. Verify Biometric Data
-**POST** `/biometric/verify`
+### 2. Enroll Fingerprint Template
+**POST** `/biometric/enroll`
 
-Verify biometric data against stored templates.
+Enroll a new fingerprint template for the authenticated user.
 
 **Request Body:**
 ```json
 {
+  "biometric_type": "fingerprint",
+  "fingerprint_data": "base64_encoded_fingerprint_data",
+  "replace_existing": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Fingerprint template enrolled successfully",
+  "face_detected": true,
+  "quality_score": 0.89,
+  "processing_time_ms": 143,
+  "template_id": 6
+}
+```
+
+### 3. Verify Face Biometric Data
+**POST** `/biometric/verify`
+
+Verify face biometric data against stored templates.
+
+**Request Body:**
+```json
+{
+  "biometric_type": "face",
   "video_data": "base64_encoded_video_data",
   "video_format": "mp4",
   "threshold": 0.7
 }
 ```
 
-### 3. Get Biometric Status
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Face verification successful",
+  "similarity_score": 0.87,
+  "threshold_used": 0.7,
+  "face_detected": true,
+  "processing_time_ms": 234
+}
+```
+
+### 4. Verify Fingerprint Data
+**POST** `/biometric/verify`
+
+Verify fingerprint data against stored templates.
+
+**Request Body:**
+```json
+{
+  "biometric_type": "fingerprint",
+  "fingerprint_data": "base64_encoded_fingerprint_data",
+  "threshold": 0.75
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Fingerprint verification successful",
+  "similarity_score": 0.91,
+  "threshold_used": 0.75,
+  "face_detected": true,
+  "processing_time_ms": 156
+}
+```
+
+### 5. Get Biometric Status
 **GET** `/biometric/status`
 
 Get the current biometric enrollment status.

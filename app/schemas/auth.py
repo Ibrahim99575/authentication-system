@@ -23,8 +23,16 @@ class BiometricLoginRequest(BaseModel):
     """Schema for biometric login request"""
     username: str
     password: str
-    video_data: str = Field(..., description="Base64 encoded video data")
+    biometric_type: str = Field("face", description="Type of biometric authentication")
+    video_data: Optional[str] = Field(None, description="Base64 encoded video data (for face)")
+    fingerprint_data: Optional[str] = Field(None, description="Base64 encoded fingerprint data")
     video_format: str = Field("mp4", description="Video format")
+
+class FingerprintLoginRequest(BaseModel):
+    """Schema for fingerprint login request"""
+    username: str
+    password: str
+    fingerprint_data: str = Field(..., description="Base64 encoded fingerprint data")
 
 class BiometricRegistrationRequest(BaseModel):
     """Schema for biometric registration request"""

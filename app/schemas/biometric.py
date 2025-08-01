@@ -5,22 +5,33 @@ Biometric operation schemas
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from datetime import datetime
+from enum import Enum
+
+class BiometricType(str, Enum):
+    """Enum for biometric types"""
+    FACE = "face"
+    FINGERPRINT = "fingerprint"
 
 class BiometricEnrollment(BaseModel):
     """Schema for biometric enrollment request"""
-    video_data: str = Field(..., description="Base64 encoded video data")
+    biometric_type: BiometricType = Field(BiometricType.FACE, description="Type of biometric data")
+    video_data: Optional[str] = Field(None, description="Base64 encoded video data (for face)")
+    fingerprint_data: Optional[str] = Field(None, description="Base64 encoded fingerprint data")
     video_format: str = Field("mp4", description="Video format")
     replace_existing: bool = Field(False, description="Replace existing templates")
 
 class BiometricVerification(BaseModel):
     """Schema for biometric verification request"""
-    video_data: str = Field(..., description="Base64 encoded video data")
+    biometric_type: BiometricType = Field(BiometricType.FACE, description="Type of biometric data")
+    video_data: Optional[str] = Field(None, description="Base64 encoded video data (for face)")
+    fingerprint_data: Optional[str] = Field(None, description="Base64 encoded fingerprint data")
     video_format: str = Field("mp4", description="Video format")
     threshold: Optional[float] = Field(None, description="Custom threshold for verification")
 
 class BiometricTemplate(BaseModel):
     """Schema for biometric template response"""
     id: int
+    biometric_type: str
     template_version: str
     quality_score: Optional[float]
     confidence_score: Optional[float]

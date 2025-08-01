@@ -12,6 +12,7 @@ from app.schemas.biometric import (
     BiometricResult, BiometricStatus
 )
 from app.services.biometric_service import BiometricService
+from app.services.fingerprint_service import FingerprintService
 from app.services.auth_service import AuthService
 from app.utils.logger import get_logger
 
@@ -45,20 +46,55 @@ async def enroll_biometric(
 ):
     """Enroll biometric template for current user"""
     try:
-        biometric_service = BiometricService(db)
-        
         # If replace_existing is True, deactivate existing templates
         if enrollment_data.replace_existing:
-            templates = biometric_service.get_user_templates(current_user.id)
-            for template in templates:
-                template.is_active = False
+            biometric_service = BiometricService(db)
+            fingerprint_service = FingerprintService(db)
+            
+            # Deactivate existing templates of the same type
+            if enrollment_data.biometric_type == "face":
+                templates = biometric_service.get_user_templates(current_user.id)
+                for template in templates:
+                    template.is_active = False
+            elif enrollment_data.biometric_type == "fingerprint":
+                fingerprint_service.delete_user_fingerprint_templates(current_user.id)
+            
             db.commit()
         
-        result = await biometric_service.enroll_biometric(
-            current_user.id,
-            enrollment_data.video_data,
-            enrollment_data.video_format
-        )
+        if enrollment_data.biometric_type == "face":
+            # Handle face enrollment
+            if not enrollment_data.video_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Video data required for face enrollment"
+                )
+            
+            biometric_service = BiometricService(db)
+            result = await biometric_service.enroll_biometric(
+                current_user.id,
+                enrollment_data.video_data,
+                enrollment_data.video_format
+            )
+        
+        elif enrollment_data.biometric_type == "fingerprint":
+            # Handle fingerprint enrollment
+            if not enrollment_data.fingerprint_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Fingerprint data required for fingerprint enrollment"
+                )
+            
+            fingerprint_service = FingerprintService(db)
+            result = await fingerprint_service.enroll_fingerprint(
+                current_user.id,
+                enrollment_data.fingerprint_data
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported biometric type. Supported: face, fingerprint"
+            )
         
         if result.success:
             # Update user enrollment status
@@ -67,6 +103,8 @@ async def enroll_biometric(
         
         return result
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error enrolling biometric: {str(e)}")
         raise HTTPException(
@@ -82,20 +120,48 @@ async def verify_biometric(
 ):
     """Verify biometric data for current user"""
     try:
-        biometric_service = BiometricService(db)
-        
         if not current_user.is_enrolled:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User has no biometric templates enrolled"
             )
         
-        result = await biometric_service.verify_biometric(
-            current_user.id,
-            verification_data.video_data,
-            verification_data.video_format,
-            verification_data.threshold
-        )
+        if verification_data.biometric_type == "face":
+            # Handle face verification
+            if not verification_data.video_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Video data required for face verification"
+                )
+            
+            biometric_service = BiometricService(db)
+            result = await biometric_service.verify_biometric(
+                current_user.id,
+                verification_data.video_data,
+                verification_data.video_format,
+                verification_data.threshold
+            )
+        
+        elif verification_data.biometric_type == "fingerprint":
+            # Handle fingerprint verification
+            if not verification_data.fingerprint_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Fingerprint data required for fingerprint verification"
+                )
+            
+            fingerprint_service = FingerprintService(db)
+            result = await fingerprint_service.verify_fingerprint(
+                current_user.id,
+                verification_data.fingerprint_data,
+                verification_data.threshold
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported biometric type. Supported: face, fingerprint"
+            )
         
         return result
         

@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import VideoCapture from '../components/VideoCapture';
+import FingerprintCapture from '../components/FingerprintCapture';
 import BiometricAuthAPI from '../services/api';
 
 const BiometricPage = ({ user, onUserUpdate }) => {
     const [activeTab, setActiveTab] = useState('status');
+    const [enrollmentType, setEnrollmentType] = useState('face'); // 'face' or 'fingerprint'
+    const [verificationTab, setVerificationTab] = useState('face'); // 'face' or 'fingerprint'
     const [isRecording, setIsRecording] = useState(false);
+    const [isCapturing, setIsCapturing] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -14,18 +18,35 @@ const BiometricPage = ({ user, onUserUpdate }) => {
     // Create API instance only once using useMemo
     const api = useMemo(() => new BiometricAuthAPI(), []);
     
-    useEffect(() => {
-        loadBiometricStatus();
-    }, [api]); // Add api as dependency since it's stable now
+    // Helper function to format error messages properly
+    const formatErrorMessage = (error, defaultMessage) => {
+        if (typeof error === 'string') {
+            return error;
+        }
+        if (error?.message) {
+            return error.message;
+        }
+        if (error?.detail) {
+            return error.detail;
+        }
+        if (error?.toString && typeof error.toString === 'function') {
+            return error.toString();
+        }
+        return defaultMessage || 'An error occurred';
+    };
     
-    const loadBiometricStatus = async () => {
+    const loadBiometricStatus = useCallback(async () => {
         try {
             const result = await api.getBiometricStatus();
             setBiometricStatus(result);
         } catch (error) {
             console.error('Failed to load biometric status:', error);
         }
-    };
+    }, [api]);
+    
+    useEffect(() => {
+        loadBiometricStatus();
+    }, [loadBiometricStatus]);
     
     const handleEnrollment = async (videoBlob) => {
         setIsLoading(true);
@@ -36,26 +57,60 @@ const BiometricPage = ({ user, onUserUpdate }) => {
             const result = await api.enrollBiometric(videoBlob, true); // Replace existing
             
             if (result.success) {
-                setSuccess('Biometric enrollment successful! You can now use biometric login.');
+                setSuccess('Face biometric enrollment successful! You can now use face login.');
                 loadBiometricStatus();
                 // Update user enrollment status
                 if (onUserUpdate) {
                     onUserUpdate({ ...user, is_enrolled: true });
                 }
             } else {
-                setError(result.message || 'Biometric enrollment failed');
+                setError(result.message || 'Face biometric enrollment failed');
             }
         } catch (error) {
-            setError(error.message || 'Biometric enrollment failed');
+            console.error('Face enrollment error:', error);
+            setError(formatErrorMessage(error, 'Face biometric enrollment failed'));
         } finally {
             setIsLoading(false);
             setIsRecording(false);
         }
     };
     
+    const handleFingerprintEnrollment = async (fingerprintResult) => {
+        setIsLoading(true);
+        setError('');
+        setSuccess('');
+        
+        try {
+            // Extract the fingerprint data from the result object
+            const fingerprintData = fingerprintResult?.fingerprint_data || fingerprintResult;
+            console.log('Enrollment - Original result:', fingerprintResult);
+            console.log('Enrollment - Extracted fingerprint data:', fingerprintData);
+            
+            const result = await api.enrollFingerprint(fingerprintData, true); // Replace existing
+            
+            if (result.success) {
+                setSuccess('Fingerprint enrollment successful! You can now use fingerprint login.');
+                loadBiometricStatus();
+                // Update user enrollment status
+                if (onUserUpdate) {
+                    onUserUpdate({ ...user, is_enrolled: true });
+                }
+            } else {
+                setError(result.message || 'Fingerprint enrollment failed');
+            }
+        } catch (error) {
+            console.error('Fingerprint enrollment error:', error);
+            setError(formatErrorMessage(error, 'Fingerprint enrollment failed'));
+        } finally {
+            setIsLoading(false);
+            setIsCapturing(false);
+        }
+    };
+    
     const handleVerification = async (videoBlob) => {
         setIsLoading(true);
         setError('');
+        setSuccess('');
         setVerificationResult(null);
         
         try {
@@ -63,15 +118,48 @@ const BiometricPage = ({ user, onUserUpdate }) => {
             setVerificationResult(result);
             
             if (result.success) {
-                setSuccess(`Biometric verification successful! Similarity score: ${(result.similarity_score * 100).toFixed(1)}%`);
+                setSuccess(`Face verification successful! Similarity score: ${(result.similarity_score * 100).toFixed(1)}%`);
             } else {
-                setError(result.message || 'Biometric verification failed');
+                setError(result.message || 'Face verification failed');
             }
         } catch (error) {
-            setError(error.message || 'Biometric verification failed');
+            console.error('Face verification error:', error);
+            setError(formatErrorMessage(error, 'Face verification failed'));
         } finally {
             setIsLoading(false);
             setIsRecording(false);
+        }
+    };
+    
+    const handleFingerprintVerification = async (fingerprintResult) => {
+        setIsLoading(true);
+        setError('');
+        setSuccess('');
+        setVerificationResult(null);
+        
+        try {
+            // Extract the fingerprint data from the result object
+            const fingerprintData = fingerprintResult?.fingerprint_data || fingerprintResult;
+            console.log('Verification - Original result:', fingerprintResult);
+            console.log('Verification - Extracted fingerprint data:', fingerprintData);
+            
+            const result = await api.verifyFingerprint(fingerprintData);
+            console.log('Received result:', result);
+            setVerificationResult(result);
+            
+            if (result.success) {
+                setSuccess(`Fingerprint verification successful! Similarity score: ${(result.similarity_score * 100).toFixed(1)}%`);
+            } else {
+                setError(result.message || 'Fingerprint verification failed');
+            }
+        } catch (error) {
+            console.error('Fingerprint verification error:', error);
+            console.error('Error type:', typeof error);
+            console.error('Error keys:', Object.keys(error));
+            setError(formatErrorMessage(error, 'Fingerprint verification failed'));
+        } finally {
+            setIsLoading(false);
+            setIsCapturing(false);
         }
     };
     
@@ -98,7 +186,8 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                 setError(result.message || 'Failed to delete biometric template');
             }
         } catch (error) {
-            setError(error.message || 'Failed to delete biometric template');
+            console.error('Delete template error:', error);
+            setError(formatErrorMessage(error, 'Failed to delete biometric template'));
         } finally {
             setIsLoading(false);
         }
@@ -174,7 +263,7 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                 
                 {error && (
                     <div className="alert alert-error">
-                        {error}
+                        {typeof error === 'string' ? error : 'An error occurred'}
                     </div>
                 )}
                 
@@ -253,15 +342,26 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                             {user?.is_enrolled ? 'Re-enroll Biometric Data' : 'Enroll Biometric Data'}
                         </h3>
                         
-                        <div className="alert alert-info">
-                            <h4>📹 Enrollment Instructions</h4>
-                            <ul style={{ marginLeft: '20px', marginTop: '10px' }}>
-                                <li>Ensure good lighting on your face</li>
-                                <li>Look directly at the camera</li>
-                                <li>Keep your face centered in the frame</li>
-                                <li>Avoid wearing sunglasses or hats</li>
-                                <li>Stay still during the 5-second recording</li>
-                            </ul>
+                        {/* Enrollment Type Selection */}
+                        <div className="radio-group" style={{ marginBottom: '20px' }}>
+                            <label className="radio-option">
+                                <input
+                                    type="radio"
+                                    value="face"
+                                    checked={enrollmentType === 'face'}
+                                    onChange={(e) => setEnrollmentType(e.target.value)}
+                                />
+                                Face Recognition
+                            </label>
+                            <label className="radio-option">
+                                <input
+                                    type="radio"
+                                    value="fingerprint"
+                                    checked={enrollmentType === 'fingerprint'}
+                                    onChange={(e) => setEnrollmentType(e.target.value)}
+                                />
+                                Fingerprint / Windows Hello
+                            </label>
                         </div>
                         
                         {user?.is_enrolled && (
@@ -271,17 +371,55 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                             </div>
                         )}
                         
-                        <VideoCapture
-                            onVideoCapture={handleEnrollment}
-                            isRecording={isRecording}
-                            setIsRecording={setIsRecording}
-                            duration={5000}
-                        />
+                        {/* Face Enrollment */}
+                        {enrollmentType === 'face' && (
+                            <>
+                                <div className="alert alert-info">
+                                    <h4>📹 Face Enrollment Instructions</h4>
+                                    <ul style={{ marginLeft: '20px', marginTop: '10px' }}>
+                                        <li>Ensure good lighting on your face</li>
+                                        <li>Look directly at the camera</li>
+                                        <li>Keep your face centered in the frame</li>
+                                        <li>Avoid wearing sunglasses or hats</li>
+                                        <li>Stay still during the 5-second recording</li>
+                                    </ul>
+                                </div>
+                                
+                                <VideoCapture
+                                    onVideoCapture={handleEnrollment}
+                                    isRecording={isRecording}
+                                    setIsRecording={setIsRecording}
+                                    duration={5000}
+                                />
+                            </>
+                        )}
+                        
+                        {/* Fingerprint Enrollment */}
+                        {enrollmentType === 'fingerprint' && (
+                            <>
+                                <div className="alert alert-info">
+                                    <h4>👆 Fingerprint Enrollment Instructions</h4>
+                                    <ul style={{ marginLeft: '20px', marginTop: '10px' }}>
+                                        <li>Clean your finger before scanning</li>
+                                        <li>Place finger firmly on the sensor</li>
+                                        <li>Keep finger still during capture</li>
+                                        <li>Remove finger when prompted</li>
+                                    </ul>
+                                </div>
+                                
+                                <FingerprintCapture
+                                    onFingerprintCapture={handleFingerprintEnrollment}
+                                    isCapturing={isCapturing}
+                                    setIsCapturing={setIsCapturing}
+                                    disabled={isLoading}
+                                />
+                            </>
+                        )}
                         
                         {isLoading && (
                             <div className="loading" style={{ justifyContent: 'center', marginTop: '20px' }}>
                                 <div className="spinner"></div>
-                                Processing biometric enrollment...
+                                Processing {enrollmentType} enrollment...
                             </div>
                         )}
                     </div>
@@ -305,17 +443,61 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                             </div>
                         ) : (
                             <>
-                                <div className="alert alert-info">
-                                    <h4>🔍 Verification Test</h4>
-                                    <p>Record a 5-second video to test how well your biometric data matches your enrolled template.</p>
+                                {/* Verification Type Selection */}
+                                <div className="radio-group" style={{ marginBottom: '20px' }}>
+                                    <label className="radio-option">
+                                        <input
+                                            type="radio"
+                                            value="face"
+                                            checked={verificationTab === 'face'}
+                                            onChange={(e) => setVerificationTab(e.target.value)}
+                                        />
+                                        Face Recognition
+                                    </label>
+                                    <label className="radio-option">
+                                        <input
+                                            type="radio"
+                                            value="fingerprint"
+                                            checked={verificationTab === 'fingerprint'}
+                                            onChange={(e) => setVerificationTab(e.target.value)}
+                                        />
+                                        Fingerprint
+                                    </label>
                                 </div>
                                 
-                                <VideoCapture
-                                    onVideoCapture={handleVerification}
-                                    isRecording={isRecording}
-                                    setIsRecording={setIsRecording}
-                                    duration={5000}
-                                />
+                                {/* Face Verification */}
+                                {verificationTab === 'face' && (
+                                    <>
+                                        <div className="alert alert-info">
+                                            <h4>🔍 Face Verification Test</h4>
+                                            <p>Record a 5-second video to test how well your face matches your enrolled template.</p>
+                                        </div>
+                                        
+                                        <VideoCapture
+                                            onVideoCapture={handleVerification}
+                                            isRecording={isRecording}
+                                            setIsRecording={setIsRecording}
+                                            duration={5000}
+                                        />
+                                    </>
+                                )}
+                                
+                                {/* Fingerprint Verification */}
+                                {verificationTab === 'fingerprint' && (
+                                    <>
+                                        <div className="alert alert-info">
+                                            <h4>🔍 Fingerprint Verification Test</h4>
+                                            <p>Place your finger on the sensor to test how well it matches your enrolled template.</p>
+                                        </div>
+                                        
+                                        <FingerprintCapture
+                                            onFingerprintCapture={handleFingerprintVerification}
+                                            isCapturing={isCapturing}
+                                            setIsCapturing={setIsCapturing}
+                                            disabled={isLoading}
+                                        />
+                                    </>
+                                )}
                                 
                                 {verificationResult && (
                                     <div className={`alert ${verificationResult.success ? 'alert-success' : 'alert-error'}`} style={{ marginTop: '20px' }}>
@@ -330,7 +512,7 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                                                 </div>
                                             </div>
                                             <div className="info-item">
-                                                <div className="info-label">Face Detected</div>
+                                                <div className="info-label">Biometric Detected</div>
                                                 <div className="info-value">
                                                     {verificationResult.face_detected ? 'Yes' : 'No'}
                                                 </div>
@@ -348,7 +530,7 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                                 {isLoading && (
                                     <div className="loading" style={{ justifyContent: 'center', marginTop: '20px' }}>
                                         <div className="spinner"></div>
-                                        Processing verification...
+                                        Processing {verificationTab} verification...
                                     </div>
                                 )}
                             </>
