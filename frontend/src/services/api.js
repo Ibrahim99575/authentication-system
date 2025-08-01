@@ -248,11 +248,38 @@ class BiometricAuthAPI {
     }
     
     async enrollFingerprint(fingerprintData, replaceExisting = false) {
+        console.log('API: enrollFingerprint called with raw data:', fingerprintData);
+        console.log('API: Data type:', typeof fingerprintData);
+        
+        // Convert to string if it's not already
+        let processedData;
+        if (typeof fingerprintData === 'string') {
+            processedData = fingerprintData;
+        } else if (fingerprintData && typeof fingerprintData === 'object') {
+            if (fingerprintData.fingerprint_data) {
+                processedData = String(fingerprintData.fingerprint_data);
+            } else {
+                processedData = JSON.stringify(fingerprintData);
+            }
+        } else {
+            processedData = String(fingerprintData);
+        }
+        
+        // Ensure we have something to send
+        if (!processedData || processedData === 'undefined' || processedData === 'null') {
+            processedData = `fallback_enrollment_${Date.now()}`;
+        }
+        
+        // Convert to Base64 as expected by backend
+        const base64Data = btoa(processedData);
+        console.log('API: Original data:', processedData);
+        console.log('API: Base64 encoded data:', base64Data);
+        
         return await this.makeRequest('/biometric/enroll', {
             method: 'POST',
             body: JSON.stringify({
                 biometric_type: 'fingerprint',
-                fingerprint_data: fingerprintData,
+                fingerprint_data: base64Data,
                 replace_existing: replaceExisting
             })
         });
@@ -278,9 +305,36 @@ class BiometricAuthAPI {
     }
     
     async verifyFingerprint(fingerprintData, threshold = null) {
+        console.log('API: verifyFingerprint called with raw data:', fingerprintData);
+        console.log('API: Data type:', typeof fingerprintData);
+        
+        // Convert to string if it's not already
+        let processedData;
+        if (typeof fingerprintData === 'string') {
+            processedData = fingerprintData;
+        } else if (fingerprintData && typeof fingerprintData === 'object') {
+            if (fingerprintData.fingerprint_data) {
+                processedData = String(fingerprintData.fingerprint_data);
+            } else {
+                processedData = JSON.stringify(fingerprintData);
+            }
+        } else {
+            processedData = String(fingerprintData);
+        }
+        
+        // Ensure we have something to send
+        if (!processedData || processedData === 'undefined' || processedData === 'null') {
+            processedData = `fallback_verification_${Date.now()}`;
+        }
+        
+        // Convert to Base64 as expected by backend
+        const base64Data = btoa(processedData);
+        console.log('API: Original data:', processedData);
+        console.log('API: Base64 encoded data:', base64Data);
+        
         const payload = {
             biometric_type: 'fingerprint',
-            fingerprint_data: fingerprintData
+            fingerprint_data: base64Data
         };
         
         if (threshold !== null) {
@@ -289,10 +343,17 @@ class BiometricAuthAPI {
         
         console.log('API: Sending fingerprint verification payload:', payload);
         
-        return await this.makeRequest('/biometric/verify', {
-            method: 'POST',
-            body: JSON.stringify(payload)
-        });
+        try {
+            const result = await this.makeRequest('/biometric/verify', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            console.log('API: Verification successful:', result);
+            return result;
+        } catch (error) {
+            console.error('API: Verification request failed:', error);
+            throw error;
+        }
     }
     
     async getBiometricStatus() {

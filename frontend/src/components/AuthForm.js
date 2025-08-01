@@ -465,6 +465,7 @@ const AuthForm = ({ onAuthSuccess }) => {
                                 isCapturing={isCapturing}
                                 setIsCapturing={setIsCapturing}
                                 disabled={isLoading}
+                                mode="verification"
                             />
                         </div>
                         

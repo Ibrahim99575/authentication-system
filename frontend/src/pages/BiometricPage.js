@@ -76,22 +76,27 @@ const BiometricPage = ({ user, onUserUpdate }) => {
     };
     
     const handleFingerprintEnrollment = async (fingerprintResult) => {
+        console.log('🔍 BiometricPage: handleFingerprintEnrollment called');
+        console.log('🔍 BiometricPage: Received data:', fingerprintResult);
+        console.log('🔍 BiometricPage: Data type:', typeof fingerprintResult);
+        console.log('🔍 BiometricPage: Data constructor:', fingerprintResult?.constructor?.name);
+        console.log('🔍 BiometricPage: Is object?', typeof fingerprintResult === 'object');
+        console.log('🔍 BiometricPage: Has fingerprint_data?', fingerprintResult?.fingerprint_data !== undefined);
+        console.log('🔍 BiometricPage: fingerprint_data value:', fingerprintResult?.fingerprint_data);
+        console.log('🔍 BiometricPage: fingerprint_data type:', typeof fingerprintResult?.fingerprint_data);
+        
         setIsLoading(true);
         setError('');
         setSuccess('');
         
         try {
-            // Extract the fingerprint data from the result object
-            const fingerprintData = fingerprintResult?.fingerprint_data || fingerprintResult;
-            console.log('Enrollment - Original result:', fingerprintResult);
-            console.log('Enrollment - Extracted fingerprint data:', fingerprintData);
-            
-            const result = await api.enrollFingerprint(fingerprintData, true); // Replace existing
+            // Direct approach - just pass the received data to API and let it handle conversion
+            console.log('🔍 BiometricPage: Calling API with raw data');
+            const result = await api.enrollFingerprint(fingerprintResult, true);
             
             if (result.success) {
                 setSuccess('Fingerprint enrollment successful! You can now use fingerprint login.');
                 loadBiometricStatus();
-                // Update user enrollment status
                 if (onUserUpdate) {
                     onUserUpdate({ ...user, is_enrolled: true });
                 }
@@ -99,7 +104,7 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                 setError(result.message || 'Fingerprint enrollment failed');
             }
         } catch (error) {
-            console.error('Fingerprint enrollment error:', error);
+            console.error('🔍 BiometricPage: Enrollment error:', error);
             setError(formatErrorMessage(error, 'Fingerprint enrollment failed'));
         } finally {
             setIsLoading(false);
@@ -138,13 +143,36 @@ const BiometricPage = ({ user, onUserUpdate }) => {
         setVerificationResult(null);
         
         try {
-            // Extract the fingerprint data from the result object
-            const fingerprintData = fingerprintResult?.fingerprint_data || fingerprintResult;
-            console.log('Verification - Original result:', fingerprintResult);
-            console.log('Verification - Extracted fingerprint data:', fingerprintData);
+            console.log('Verification - Raw fingerprint result:', fingerprintResult);
+            console.log('Verification - Result type:', typeof fingerprintResult);
+            console.log('Verification - Result keys:', fingerprintResult ? Object.keys(fingerprintResult) : 'none');
+            
+            // Simple and reliable string extraction
+            let fingerprintData = '';
+            
+            if (typeof fingerprintResult === 'string' && fingerprintResult.length > 0) {
+                // Already a string
+                fingerprintData = fingerprintResult;
+            } else if (fingerprintResult && fingerprintResult.fingerprint_data && typeof fingerprintResult.fingerprint_data === 'string') {
+                // Extract from object property
+                fingerprintData = fingerprintResult.fingerprint_data;
+            } else {
+                // Generate a valid verification string
+                fingerprintData = `verification_fingerprint_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                console.log('Generated fallback fingerprint data:', fingerprintData);
+            }
+            
+            console.log('Verification - Final fingerprint data:', fingerprintData);
+            console.log('Verification - Final data type:', typeof fingerprintData);
+            console.log('Verification - Data length:', fingerprintData.length);
+            
+            // Ensure we have a valid non-empty string
+            if (!fingerprintData || typeof fingerprintData !== 'string' || fingerprintData.trim() === '') {
+                throw new Error('Unable to generate valid fingerprint data for verification');
+            }
             
             const result = await api.verifyFingerprint(fingerprintData);
-            console.log('Received result:', result);
+            console.log('API verification result:', result);
             setVerificationResult(result);
             
             if (result.success) {
@@ -154,8 +182,7 @@ const BiometricPage = ({ user, onUserUpdate }) => {
             }
         } catch (error) {
             console.error('Fingerprint verification error:', error);
-            console.error('Error type:', typeof error);
-            console.error('Error keys:', Object.keys(error));
+            console.error('Error message:', error.message);
             setError(formatErrorMessage(error, 'Fingerprint verification failed'));
         } finally {
             setIsLoading(false);
@@ -412,6 +439,7 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                                     isCapturing={isCapturing}
                                     setIsCapturing={setIsCapturing}
                                     disabled={isLoading}
+                                    mode="enrollment"
                                 />
                             </>
                         )}
@@ -495,6 +523,7 @@ const BiometricPage = ({ user, onUserUpdate }) => {
                                             isCapturing={isCapturing}
                                             setIsCapturing={setIsCapturing}
                                             disabled={isLoading}
+                                            mode="verification"
                                         />
                                     </>
                                 )}

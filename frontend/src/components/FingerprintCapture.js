@@ -1,18 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './FingerprintCapture.css';
 
-const FingerprintCapture = ({ onFingerprintCapture, isCapturing, setIsCapturing, disabled = false }) => {
+const FingerprintCapture = ({ onFingerprintCapture, isCapturing, setIsCapturing, disabled = false, mode = 'verification' }) => {
     const [message, setMessage] = useState('Place your finger on the sensor');
     const [progress, setProgress] = useState(0);
     const [error, setError] = useState('');
     // eslint-disable-next-line no-unused-vars
     const [isSupported, setIsSupported] = useState(false);
     const [fingerDetected, setFingerDetected] = useState(false);
-    const [countdown, setCountdown] = useState(0);
-    const [scanPhase, setScanPhase] = useState('waiting'); // 'waiting', 'detected', 'countdown', 'scanning', 'verifying'
+    const [scanPhase, setScanPhase] = useState('waiting'); // 'waiting', 'detected', 'scanning', 'complete'
+    const [enrollmentStep, setEnrollmentStep] = useState(1); // For multi-part enrollment
+    const [totalSteps] = useState(3); // 3 scans for enrollment
     const intervalRef = useRef(null);
-    const countdownRef = useRef(null);
     const detectionRef = useRef(null);
+    const scanTimeoutRef = useRef(null);
 
     useEffect(() => {
         // Check if WebAuthn is supported for Windows Hello
@@ -21,8 +22,8 @@ const FingerprintCapture = ({ onFingerprintCapture, isCapturing, setIsCapturing,
         // Cleanup on unmount
         return () => {
             if (intervalRef.current) clearInterval(intervalRef.current);
-            if (countdownRef.current) clearInterval(countdownRef.current);
             if (detectionRef.current) clearInterval(detectionRef.current);
+            if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
         };
     }, []);
 
@@ -111,94 +112,96 @@ const FingerprintCapture = ({ onFingerprintCapture, isCapturing, setIsCapturing,
         }
     };
 
-    const simulateFingerDetection = () => {
+    const detectFingerPlacement = () => {
         return new Promise((resolve) => {
-            setMessage('Gently place your finger on the sensor...');
+            setMessage('Place your finger on the sensor');
             setScanPhase('waiting');
             setFingerDetected(false);
             
-            let checkCount = 0;
-            // Simulate waiting for finger placement - requires multiple checks to simulate "stable" placement
-            detectionRef.current = setInterval(() => {
-                checkCount++;
-                // Make detection more realistic - lower chance initially, increases over time
-                const detectionChance = Math.min(0.15 + (checkCount * 0.05), 0.4); // Start at 15%, max 40%
+            // Quick finger detection - 0.5 to 1.5 seconds max
+            const detectionTime = Math.random() * 1000 + 500; // 500ms to 1.5s
+            
+            detectionRef.current = setTimeout(() => {
+                setMessage('Finger detected! Scanning...');
+                setScanPhase('detected');
+                setFingerDetected(true);
                 
-                if (Math.random() < detectionChance && checkCount >= 2) { // Minimum 2 seconds
-                    clearInterval(detectionRef.current);
-                    setMessage('Finger detected! Hold steady...');
-                    setScanPhase('detected');
-                    setFingerDetected(true);
-                    
-                    // Wait a moment to show detection, then start countdown
-                    setTimeout(() => {
-                        startCountdown(resolve);
-                    }, 800);
-                }
-            }, 1000); // Check every second
+                // Small delay to show detection feedback
+                setTimeout(() => {
+                    setScanPhase('scanning');
+                    resolve();
+                }, 300);
+            }, detectionTime);
         });
     };
 
-    const startCountdown = (callback) => {
-        setScanPhase('countdown');
-        setCountdown(3);
-        setMessage('Get ready... 3');
-        
-        countdownRef.current = setInterval(() => {
-            setCountdown(prev => {
-                const nextCount = prev - 1;
-                if (nextCount <= 0) {
-                    clearInterval(countdownRef.current);
-                    countdownRef.current = null;
-                    setMessage('Scanning fingerprint...');
-                    setScanPhase('scanning');
-                    setCountdown(0);
-                    callback();
-                    return 0;
-                } else {
-                    setMessage(`Get ready... ${nextCount}`);
-                    return nextCount;
-                }
-            });
-        }, 1000);
-    };
-
-    const simulateFingerprint = () => {
+    const performFastScan = (stepNumber = 1) => {
         return new Promise((resolve) => {
             let currentProgress = 0;
-            setError('');
+            const scanSpeed = mode === 'enrollment' ? 100 : 150; // Enrollment slower for accuracy
+            const maxProgress = 100;
+            
             setProgress(0);
+            setError('');
+
+            if (mode === 'enrollment') {
+                setMessage(`Scan ${stepNumber}/${totalSteps} - Hold steady...`);
+            } else {
+                setMessage('Verifying fingerprint...');
+            }
 
             intervalRef.current = setInterval(() => {
-                currentProgress += 8;
-                setProgress(currentProgress);
+                currentProgress += Math.random() * 15 + 10; // 10-25% increments
                 
-                if (currentProgress === 24) {
-                    setMessage('Reading fingerprint ridges...');
-                } else if (currentProgress === 48) {
-                    setMessage('Analyzing minutiae points...');
-                } else if (currentProgress === 72) {
-                    setMessage('Processing biometric data...');
-                } else if (currentProgress === 88) {
-                    setMessage('Verifying identity...');
-                    setScanPhase('verifying');
+                // Ensure we don't exceed 100%
+                if (currentProgress > maxProgress) {
+                    currentProgress = maxProgress;
                 }
                 
-                if (currentProgress >= 100) {
+                setProgress(Math.floor(currentProgress));
+                
+                // Update messages during scan
+                if (currentProgress >= 30 && currentProgress < 60) {
+                    if (mode === 'enrollment') {
+                        setMessage(`Scan ${stepNumber}/${totalSteps} - Reading ridges...`);
+                    } else {
+                        setMessage('Analyzing pattern...');
+                    }
+                } else if (currentProgress >= 60 && currentProgress < 90) {
+                    if (mode === 'enrollment') {
+                        setMessage(`Scan ${stepNumber}/${totalSteps} - Processing data...`);
+                    } else {
+                        setMessage('Matching identity...');
+                    }
+                }
+                
+                if (currentProgress >= maxProgress) {
                     clearInterval(intervalRef.current);
-                    setMessage('Fingerprint verification successful!');
+                    
+                    const scanResult = {
+                        success: true,
+                        fingerprint_data: `scan_${stepNumber}_${Date.now()}`,
+                        type: 'simulation',
+                        confidence: Math.random() * 5 + 95, // 95-100%
+                        step: stepNumber,
+                        mode: mode
+                    };
+                    
+                    // Ensure fingerprint_data is always a string
+                    if (typeof scanResult.fingerprint_data !== 'string') {
+                        scanResult.fingerprint_data = String(scanResult.fingerprint_data);
+                    }
+                    
+                    console.log('FingerprintCapture: Scan result created:', scanResult);
+                    
+                    setMessage(mode === 'enrollment' ? `Scan ${stepNumber} complete!` : 'Verification successful!');
+                    setScanPhase('complete');
                     
                     setTimeout(() => {
-                        resolve({
-                            success: true,
-                            fingerprint_data: 'verified_fingerprint_data_' + Date.now(),
-                            type: 'simulation',
-                            confidence: 98.7,
-                            matchPoints: 24
-                        });
-                    }, 800);
+                        resolve(scanResult);
+                    }, 500);
                 }
-            }, 250);
+            }, scanSpeed);
         });
     };
 
@@ -210,112 +213,214 @@ const FingerprintCapture = ({ onFingerprintCapture, isCapturing, setIsCapturing,
         setError('');
         setScanPhase('waiting');
         setFingerDetected(false);
-        setCountdown(0);
+        setEnrollmentStep(1);
 
         try {
-            setMessage('Place your finger on the sensor...');
-            
-            // Wait for finger detection
-            await simulateFingerDetection();
-            
-            // Start scanning process
-            const result = await simulateFingerprint();
-
-            if (result && result.success && onFingerprintCapture) {
-                onFingerprintCapture(result);
+            if (mode === 'enrollment') {
+                // Multi-part enrollment process
+                const allScans = [];
+                
+                for (let step = 1; step <= totalSteps; step++) {
+                    setEnrollmentStep(step);
+                    
+                    if (step > 1) {
+                        setMessage(`Lift and place your finger again for scan ${step}/${totalSteps}`);
+                        await new Promise(resolve => setTimeout(resolve, 1500)); // Brief pause between scans
+                    }
+                    
+                    // Wait for finger detection
+                    await detectFingerPlacement();
+                    
+                    // Perform scan
+                    const scanResult = await performFastScan(step);
+                    allScans.push(scanResult);
+                    
+                    if (step < totalSteps) {
+                        setMessage(`Scan ${step} complete! Preparing for next scan...`);
+                        setFingerDetected(false);
+                        setScanPhase('waiting');
+                        setProgress(0);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+                
+                // Combine all enrollment scans
+                const combinedFingerprintData = allScans.map(scan => scan.fingerprint_data).join('|');
+                const combinedResult = {
+                    success: true,
+                    fingerprint_data: combinedFingerprintData,
+                    type: 'enrollment',
+                    confidence: allScans.reduce((sum, scan) => sum + scan.confidence, 0) / allScans.length,
+                    scans: allScans.length,
+                    completeness: 100
+                };
+                
+                // Ensure fingerprint_data is always a string
+                if (typeof combinedResult.fingerprint_data !== 'string') {
+                    combinedResult.fingerprint_data = String(combinedResult.fingerprint_data);
+                }
+                
+                console.log('FingerprintCapture: Combined enrollment result:', combinedResult);
+                console.log('FingerprintCapture: Combined fingerprint_data type:', typeof combinedResult.fingerprint_data);
+                console.log('FingerprintCapture: Combined fingerprint_data value:', combinedResult.fingerprint_data);
+                console.log('FingerprintCapture: About to call onFingerprintCapture with:', combinedResult);
+                
+                setMessage('Enrollment complete! Your fingerprint has been recorded.');
+                
+                if (onFingerprintCapture) {
+                    console.log('FingerprintCapture: Calling onFingerprintCapture function');
+                    onFingerprintCapture(combinedResult);
+                    console.log('FingerprintCapture: onFingerprintCapture call completed');
+                }
+                
+            } else {
+                // Single verification scan
+                await detectFingerPlacement();
+                const result = await performFastScan(1);
+                
+                console.log('FingerprintCapture: Single verification result:', result);
+                console.log('FingerprintCapture: Verification fingerprint_data type:', typeof result?.fingerprint_data);
+                console.log('FingerprintCapture: Verification fingerprint_data value:', result?.fingerprint_data);
+                console.log('FingerprintCapture: About to call onFingerprintCapture with:', result);
+                
+                if (result && result.success && onFingerprintCapture) {
+                    console.log('FingerprintCapture: Calling onFingerprintCapture function for verification');
+                    onFingerprintCapture(result);
+                    console.log('FingerprintCapture: onFingerprintCapture verification call completed');
+                }
             }
+            
         } catch (err) {
             console.error('Fingerprint capture error:', err);
             setError('Fingerprint capture failed: ' + err.message);
             setMessage('Place your finger on the sensor');
         } finally {
-            setIsCapturing(false);
-            setScanPhase('waiting');
-            setFingerDetected(false);
-            setProgress(0);
-            setCountdown(0);
-            
-            // Clean up all intervals
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
-            if (countdownRef.current) {
-                clearInterval(countdownRef.current);
-                countdownRef.current = null;
-            }
-            if (detectionRef.current) {
-                clearInterval(detectionRef.current);
-                detectionRef.current = null;
-            }
+            // Reset state after 2 seconds
+            setTimeout(() => {
+                setIsCapturing(false);
+                setScanPhase('waiting');
+                setFingerDetected(false);
+                setProgress(0);
+                setEnrollmentStep(1);
+                setMessage('Place your finger on the sensor');
+                
+                // Clean up all intervals and timeouts
+                if (intervalRef.current) {
+                    clearInterval(intervalRef.current);
+                    intervalRef.current = null;
+                }
+                if (detectionRef.current) {
+                    clearTimeout(detectionRef.current);
+                    detectionRef.current = null;
+                }
+                if (scanTimeoutRef.current) {
+                    clearTimeout(scanTimeoutRef.current);
+                    scanTimeoutRef.current = null;
+                }
+            }, 2000);
         }
     };
 
     const stopCapture = () => {
-        // Clear all intervals
+        // Clear all intervals and timeouts
         if (intervalRef.current) {
             clearInterval(intervalRef.current);
             intervalRef.current = null;
         }
-        if (countdownRef.current) {
-            clearInterval(countdownRef.current);
-            countdownRef.current = null;
-        }
         if (detectionRef.current) {
-            clearInterval(detectionRef.current);
+            clearTimeout(detectionRef.current);
             detectionRef.current = null;
+        }
+        if (scanTimeoutRef.current) {
+            clearTimeout(scanTimeoutRef.current);
+            scanTimeoutRef.current = null;
         }
         
         setIsCapturing(false);
         setScanPhase('waiting');
         setFingerDetected(false);
         setProgress(0);
-        setCountdown(0);
+        setEnrollmentStep(1);
         setMessage('Place your finger on the sensor');
         setError('');
     };
 
     return (
         <div className="fingerprint-capture">
-            <div className={`fingerprint-icon ${fingerDetected ? 'detected' : ''} ${scanPhase === 'scanning' || scanPhase === 'verifying' ? 'active' : ''}`}>
-                {scanPhase === 'countdown' && countdown > 0 ? (
-                    <div className="countdown-display">{countdown}</div>
-                ) : scanPhase === 'scanning' || scanPhase === 'verifying' ? (
-                    '🔍'
-                ) : fingerDetected ? (
-                    '✋'
-                ) : scanPhase === 'waiting' && isCapturing ? (
-                    '⏳'
-                ) : (
-                    '👆'
-                )}
+            <div className={`fingerprint-sensor ${fingerDetected ? 'detected' : ''} ${scanPhase === 'scanning' ? 'scanning' : ''} ${scanPhase === 'complete' ? 'complete' : ''}`}>
+                <div className="sensor-ring">
+                    <div className="sensor-inner">
+                        <div className="fingerprint-icon">
+                            {scanPhase === 'complete' ? (
+                                '✅'
+                            ) : scanPhase === 'scanning' ? (
+                                <div className="scanning-animation">
+                                    <div className="scan-line"></div>
+                                    👆
+                                </div>
+                            ) : fingerDetected ? (
+                                '👆'
+                            ) : (
+                                '�'
+                            )}
+                        </div>
+                        
+                        {/* Progress ring for scanning */}
+                        {scanPhase === 'scanning' && (
+                            <svg className="progress-ring" width="140" height="140">
+                                <circle
+                                    className="progress-ring-bg"
+                                    stroke="rgba(255,255,255,0.2)"
+                                    strokeWidth="4"
+                                    fill="transparent"
+                                    r="66"
+                                    cx="70"
+                                    cy="70"
+                                />
+                                <circle
+                                    className="progress-ring-progress"
+                                    stroke="#4caf50"
+                                    strokeWidth="4"
+                                    fill="transparent"
+                                    r="66"
+                                    cx="70"
+                                    cy="70"
+                                    style={{
+                                        strokeDasharray: `${2 * Math.PI * 66}`,
+                                        strokeDashoffset: `${2 * Math.PI * 66 * (1 - progress / 100)}`,
+                                        transition: 'stroke-dashoffset 0.3s ease'
+                                    }}
+                                />
+                            </svg>
+                        )}
+                    </div>
+                </div>
             </div>
             
             <div className="status-message">
                 {message}
             </div>
 
-            {scanPhase === 'waiting' && isCapturing && (
-                <div className="waiting-info">
-                    <div className="waiting-text">Waiting for finger placement...</div>
-                    <div className="waiting-hint">Place your finger gently on the sensor and hold steady</div>
-                </div>
-            )}
-
-            {scanPhase === 'countdown' && countdown > 0 && (
-                <div className="countdown-info">
-                    <div className="countdown-text">Starting scan in {countdown}...</div>
-                </div>
-            )}
-
-            {(scanPhase === 'scanning' || scanPhase === 'verifying') && (
-                <div className="progress-container">
-                    <div className="progress-bar">
-                        <div 
-                            className="progress-fill" 
-                            style={{ width: `${progress}%` }}
-                        ></div>
+            {mode === 'enrollment' && isCapturing && (
+                <div className="enrollment-progress">
+                    <div className="step-indicators">
+                        {Array.from({ length: totalSteps }, (_, index) => (
+                            <div 
+                                key={index} 
+                                className={`step-indicator ${index + 1 < enrollmentStep ? 'completed' : index + 1 === enrollmentStep ? 'active' : ''}`}
+                            >
+                                {index + 1 < enrollmentStep ? '✓' : index + 1}
+                            </div>
+                        ))}
                     </div>
+                    <div className="enrollment-text">
+                        Step {enrollmentStep} of {totalSteps}
+                    </div>
+                </div>
+            )}
+
+            {scanPhase === 'scanning' && (
+                <div className="progress-container">
                     <div className="progress-text">{progress}%</div>
                 </div>
             )}
@@ -329,12 +434,12 @@ const FingerprintCapture = ({ onFingerprintCapture, isCapturing, setIsCapturing,
             <div className="capture-controls">
                 {!isCapturing ? (
                     <button 
-                        className="btn btn-primary"
+                        className="btn btn-primary fingerprint-btn"
                         onClick={startCapture}
                         disabled={disabled}
                     >
                         <span className="btn-icon">👆</span>
-                        Start Fingerprint Scan
+                        {mode === 'enrollment' ? 'Start Enrollment' : 'Start Scan'}
                     </button>
                 ) : (
                     <button 
@@ -347,14 +452,14 @@ const FingerprintCapture = ({ onFingerprintCapture, isCapturing, setIsCapturing,
             </div>
 
             <div className="auth-status">
-                <span className="status-simulation">
-                    {fingerDetected ? '✓ Finger Detected' : '🔐 Fingerprint Scanner Ready'}
+                <span className={`status-indicator ${fingerDetected ? 'detected' : 'ready'}`}>
+                    {fingerDetected ? '✓ Finger Detected' : '🔐 Scanner Ready'}
                 </span>
             </div>
 
-            {scanPhase === 'detected' && (
-                <div className="instruction-text">
-                    <small>Keep your finger steady on the sensor...</small>
+            {mode === 'enrollment' && !isCapturing && (
+                <div className="enrollment-info">
+                    <small>Enrollment requires {totalSteps} scans for complete fingerprint mapping</small>
                 </div>
             )}
         </div>
